@@ -32,7 +32,6 @@ regex = "1.4.3"
 log = "0.4.13"
 zeroize = { version = "1.2.0", features = ["zeroize_derive"] }
 sodiumoxide = "0.2.6"
-pnet = "0.27.2"
 byteorder = "1.4.2"
 anyhow = "1.0.38"
 futures = "0.3.12"

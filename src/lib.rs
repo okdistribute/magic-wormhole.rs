@@ -22,8 +22,6 @@
 // #![deny(warnings)]
 
 mod core;
-pub mod transfer;
-pub mod transit;
 pub mod util;
 
 use crate::core::{APIEvent, AppID, Code};
@@ -33,6 +31,9 @@ use futures::{
 };
 use std::{fmt::Display, pin::Pin};
 
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct AppVersion {}
+
 use crate::core::key::derive_key;
 use log::*;
 use std::str;
@@ -41,6 +42,9 @@ use std::str;
 ///
 /// Two applications that want to communicate with each other *must* use the same mailbox server.
 pub const DEFAULT_MAILBOX_SERVER: &str = "ws://relay.magic-wormhole.io:4000/v1";
+
+/// The App ID associated with this protocol.
+pub const APPID: &str = "lothar.com/wormhole/text-or-file-xfer";
 
 /// Set a code, or allocate one
 #[non_exhaustive]

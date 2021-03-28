@@ -11,8 +11,6 @@ fn init_logger() {
     let _ = env_logger::builder()
         .filter_level(log::LevelFilter::Debug)
         .filter_module("magic_wormhole", log::LevelFilter::Trace)
-        .filter_module("magic_wormhole::transfer", log::LevelFilter::Trace)
-        .filter_module("magic_wormhole::transit", log::LevelFilter::Trace)
         .filter_module("mio", log::LevelFilter::Debug)
         .try_init();
 }
@@ -22,7 +20,7 @@ fn init_logger() {
 pub async fn test_file_rust2rust() -> anyhow::Result<()> {
     init_logger();
     use crate as magic_wormhole;
-    use magic_wormhole::{transfer, CodeProvider};
+    use magic_wormhole::{CodeProvider};
 
     let (code_tx, code_rx) = futures::channel::oneshot::channel();
 
@@ -30,8 +28,8 @@ pub async fn test_file_rust2rust() -> anyhow::Result<()> {
         .name("sender".to_owned())
         .spawn(async {
             let (welcome, connector) = magic_wormhole::connect_to_server(
-                magic_wormhole::transfer::APPID,
-                magic_wormhole::transfer::AppVersion::default(),
+                magic_wormhole::APPID,
+                magic_wormhole::AppVersion::default(),
                 magic_wormhole::DEFAULT_MAILBOX_SERVER,
                 CodeProvider::AllocateCode(2),
                 &mut None,
@@ -42,17 +40,6 @@ pub async fn test_file_rust2rust() -> anyhow::Result<()> {
             code_tx.send(welcome.code.0).unwrap();
             let mut w = connector.connect_to_client().await?;
             log::info!("Got key: {}", &w.key);
-            transfer::send_file(
-                &mut w,
-                "examples/example-file.bin",
-                &magic_wormhole::transit::DEFAULT_RELAY_SERVER
-                    .parse()
-                    .unwrap(),
-                |sent, total| {
-                    log::info!("Sent {} of {} bytes", sent, total);
-                },
-            )
-            .await
         })?;
     let receiver_task = async_std::task::Builder::new()
         .name("receiver".to_owned())
@@ -60,8 +47,8 @@ pub async fn test_file_rust2rust() -> anyhow::Result<()> {
             let code = code_rx.await?;
             log::info!("Got code over local: {}", &code);
             let (welcome, connector) = magic_wormhole::connect_to_server(
-                magic_wormhole::transfer::APPID,
-                magic_wormhole::transfer::AppVersion::default(),
+                magic_wormhole::APPID,
+                magic_wormhole::AppVersion::default(),
                 magic_wormhole::DEFAULT_MAILBOX_SERVER,
                 CodeProvider::SetCode(code),
                 &mut None,
@@ -71,18 +58,6 @@ pub async fn test_file_rust2rust() -> anyhow::Result<()> {
 
             let mut w = connector.connect_to_client().await?;
             log::info!("Got key: {}", &w.key);
-            let req = transfer::request_file(
-                &mut w,
-                &magic_wormhole::transit::DEFAULT_RELAY_SERVER
-                    .parse()
-                    .unwrap(),
-            )
-            .await?;
-
-            req.accept(false, |received, total| {
-                log::info!("Received {} of {} bytes", received, total);
-            })
-            .await
         })?;
     sender_task.await?;
     receiver_task.await?;

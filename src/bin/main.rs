@@ -14,7 +14,7 @@ use log::*;
 use pbr::{ProgressBar, Units};
 
 use magic_wormhole::{
-    transfer, transit::RelayUrl, util, CodeProvider, Wormhole, WormholeConnector,
+    util, CodeProvider, Wormhole, WormholeConnector,
 };
 use std::str::FromStr;
 
@@ -146,10 +146,10 @@ async fn main() -> anyhow::Result<()> {
     if let Some(matches) = matches.subcommand_matches("send") {
         let relay_server = matches
             .value_of("relay-server")
-            .unwrap_or(magic_wormhole::transit::DEFAULT_RELAY_SERVER);
+            .unwrap_or(magic_wormhole::DEFAULT_RELAY_SERVER);
         let (welcome, connector) = magic_wormhole::connect_to_server(
-            magic_wormhole::transfer::APPID,
-            magic_wormhole::transfer::AppVersion::default(),
+            magic_wormhole::APPID,
+            magic_wormhole::AppVersion::default(),
             magic_wormhole::DEFAULT_MAILBOX_SERVER,
             match matches.value_of("code") {
                 None => {
@@ -176,35 +176,20 @@ async fn main() -> anyhow::Result<()> {
         pb.set_units(Units::Bytes);
 
         let file = matches.value_of("file").unwrap();
-        transfer::send_file(
-            &mut wormhole,
-            file,
-            &relay_server.parse().unwrap(),
-            move |sent, total| match sent {
-                0 => {
-                    pb.total = total;
-                },
-                progress => {
-                    pb.set(progress);
-                },
-            },
-        )
-        .await
-        .unwrap();
     } else if let Some(matches) = matches.subcommand_matches("send-many") {
         on_send_many_command(matches).await?;
     } else if let Some(matches) = matches.subcommand_matches("receive") {
         let relay_server = matches
             .value_of("relay-server")
-            .unwrap_or(magic_wormhole::transit::DEFAULT_RELAY_SERVER);
+            .unwrap_or(magic_wormhole::DEFAULT_RELAY_SERVER);
         let code = matches
             .value_of("code")
             .map(ToOwned::to_owned)
             .unwrap_or_else(|| enter_code().expect("TODO handle this gracefully"));
 
         let (_welcome, connector) = magic_wormhole::connect_to_server(
-            magic_wormhole::transfer::APPID,
-            magic_wormhole::transfer::AppVersion::default(),
+            magic_wormhole::APPID,
+            magic_wormhole::AppVersion::default(),
             magic_wormhole::DEFAULT_MAILBOX_SERVER,
             CodeProvider::SetCode(code.trim().to_owned()),
         )
@@ -235,10 +220,10 @@ async fn main() -> anyhow::Result<()> {
 async fn on_send_many_command(matches: &ArgMatches<'_>) -> anyhow::Result<()> {
     let relay_server = matches
         .value_of("relay-server")
-        .unwrap_or(magic_wormhole::transit::DEFAULT_RELAY_SERVER);
+        .unwrap_or(magic_wormhole::DEFAULT_RELAY_SERVER);
     let (welcome, connector) = magic_wormhole::connect_to_server(
-        magic_wormhole::transfer::APPID,
-        magic_wormhole::transfer::AppVersion::default(),
+        magic_wormhole::APPID,
+        magic_wormhole::AppVersion::default(),
         magic_wormhole::DEFAULT_MAILBOX_SERVER,
         match matches.value_of("code") {
             None => {
@@ -294,8 +279,8 @@ async fn send_many(
 
     while time.elapsed() < timeout {
         let (_welcome, connector) = magic_wormhole::connect_to_server(
-            magic_wormhole::transfer::APPID,
-            magic_wormhole::transfer::AppVersion::default(),
+            magic_wormhole::APPID,
+            magic_wormhole::AppVersion::default(),
             magic_wormhole::DEFAULT_MAILBOX_SERVER,
             CodeProvider::SetCode(code.to_owned()),
         )
@@ -305,70 +290,3 @@ async fn send_many(
     Ok(())
 }
 
-async fn send_in_background(
-    url: Arc<RelayUrl>,
-    filename: Arc<String>,
-    connector: WormholeConnector,
-) -> anyhow::Result<()> {
-    let mut wormhole = connector.connect_to_client().await?;
-    task::spawn(async move {
-        let result = transfer::send_file(&mut wormhole, filename.deref(), &url, |sent, total| {
-            // @TODO: Not sure what kind of experience is best here.
-            info!("Sent {} of {} bytes", sent, total);
-        })
-        .await;
-        match result {
-            Ok(_) => info!("TODO success message"),
-            Err(e) => warn!("Send failed, {}", e),
-        };
-    });
-    Ok(())
-}
-
-async fn receive(mut w: Wormhole, relay_server: &str) -> anyhow::Result<()> {
-    let req = transfer::request_file(&mut w, &relay_server.parse().unwrap()).await?;
-
-    let answer = util::ask_user(
-        format!(
-            "Receive file '{}' (size: {} bytes)?",
-            req.filename.display(),
-            req.filesize
-        ),
-        false,
-    )
-    .await;
-
-    /*
-     * Control flow is a bit tricky here:
-     * - First of all, we ask if we want to receive the file at all
-     * - Then, we check if the file already exists
-     * - If it exists, ask whether to overwrite and act accordingly
-     * - If it doesn't, directly accept, but DON'T overwrite any files
-     */
-    if answer {
-        let mut pb = ProgressBar::new(req.filesize);
-        pb.format("╢▌▌░╟");
-        pb.set_units(Units::Bytes);
-
-        let on_progress = move |received, _total| {
-            pb.set(received);
-        };
-
-        if req.filename.exists() {
-            let overwrite = util::ask_user(
-                format!("Override existing file {}?", req.filename.display()),
-                false,
-            )
-            .await;
-            if overwrite {
-                req.accept(true, on_progress).await
-            } else {
-                req.reject().await
-            }
-        } else {
-            req.accept(false, on_progress).await
-        }
-    } else {
-        req.reject().await
-    }
-}
